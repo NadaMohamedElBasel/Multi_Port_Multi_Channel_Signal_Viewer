@@ -1,6 +1,8 @@
 import sys
 import numpy as np
 import pandas as pd
+import time
+import requests
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QRadioButton, 
                              QVBoxLayout, QHBoxLayout, QSlider, QLineEdit, 
                              QScrollBar, QGridLayout, QComboBox, QFileDialog, QColorDialog)
@@ -16,33 +18,36 @@ class MainWindow(QWidget):
         super().__init__()
         self.initUI()
          
-    # Define sampling rate 
+        # Define sampling rate 
         self.sampling_rate = 50
         self.timer_interval = int(1000 / self.sampling_rate)  # Convert to integer
 
         self.timer = QTimer()
-        self.timer.timeout.connect(self.update_graphs)
+        self.timer.timeout.connect(self.connect_to_signal)
         self.timer.start(self.timer_interval)  # Start timer with calculated interval
+        #self.timer.start(1000)  # Set interval to 1000 ms (1 second), adjust as needed
 
         self.signal_data = {
-        'Graph 1': None,
-        'Graph 2': None,
-        'Glued Signals': None,
-        'Graph 3': None
-    }
+            'Graph 1': None,
+            'Graph 2': None,
+            'Glued Signals': None,
+            'Graph 3': None
+        }
         self.time_index = {
             'Graph 1': 0,
             'Graph 2': 0,
             'Glued Signals': 0,
             'Graph 3': 0
-    }
-          # Store the full plotted data for each graph
+        }
+        
+        # Store the full plotted data for each graph
         self.plotted_data = {
             'Graph 1': ([], []),
             'Graph 2': ([], []),
             'Glued Signals': ([], []),
             'Graph 3': ([], [])
-    }
+        }
+        
         self.plotComboBox.setCurrentIndex(1)  # Set default to first item
 
     def initUI(self):
@@ -53,13 +58,13 @@ class MainWindow(QWidget):
         topLayout = QHBoxLayout()
         openBtn = QPushButton('Open')
         connectBtn = QPushButton('Connect')
-        signalInput = QLineEdit('Enter address of a realtime signal source')
+        self.signalInput = QLineEdit('Enter address of a realtime signal source')
         self.graph1Radio = QRadioButton('Graph 1')
         self.graph2Radio = QRadioButton('Graph 2')
         self.gluedRadio = QRadioButton('Glued Signals')
         self.graph3Radio = QRadioButton('Graph 3')
 
-    # Set the first radio button as checked by default
+        # Set the first radio button as checked by default
         self.graph1Radio.setChecked(True)
         plotComboBox = QComboBox()
         plotComboBox.addItem("Select Plot")  # Default text
@@ -70,7 +75,7 @@ class MainWindow(QWidget):
 
         topLayout.addWidget(openBtn)
         topLayout.addWidget(connectBtn)
-        topLayout.addWidget(signalInput)
+        topLayout.addWidget(self.signalInput)
         topLayout.addWidget(plotComboBox)  
        
         mainLayout.addLayout(topLayout)
@@ -78,7 +83,6 @@ class MainWindow(QWidget):
         self.plotComboBox.setCurrentIndex(1)  # Set default to "Graph 1"
 
         graphLayout = QGridLayout()
-
 
         # Editable labels for renaming graphs
         graph1Label = QLineEdit('Graph 1')
@@ -171,6 +175,7 @@ class MainWindow(QWidget):
 
         # Connect buttons
         openBtn.clicked.connect(self.openFile)
+        connectBtn.clicked.connect(self.connect_to_signal)  # Connect the connect button to the method
         exportReportBtn.clicked.connect(self.exportReport)
         colorBtn.clicked.connect(self.openColorDialog)
 
@@ -179,24 +184,23 @@ class MainWindow(QWidget):
         self.setWindowTitle('Signal Viewer')
         self.show()
 
-
     def openFile(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", "CSV Files (*.csv);;All Files (*)")
         if file_name:
-        # Load the data from the file
-         time, selected_signal = self.load_signal_data(file_name)
-         selected_graph = self.plotComboBox.currentText()
+            # Load the data from the file
+            time, selected_signal = self.load_signal_data(file_name)
+            selected_graph = self.plotComboBox.currentText()
 
-        # Store the loaded signal in the corresponding graph's entry
-         if selected_graph in self.signal_data:
-              # Check if the current signal is already loaded; If not, initialize it
-            if self.signal_data[selected_graph] is None:
-                self.signal_data[selected_graph] = (time, selected_signal)
-            else:
-                # Append new data to existing data
-                existing_time, existing_signal = self.signal_data[selected_graph]
-                self.signal_data[selected_graph] = (np.concatenate((existing_time, time)),
-                                                     np.concatenate((existing_signal, selected_signal)))
+            # Store the loaded signal in the corresponding graph's entry
+            if selected_graph in self.signal_data:
+                # Check if the current signal is already loaded; If not, initialize it
+                if self.signal_data[selected_graph] is None:
+                    self.signal_data[selected_graph] = (time, selected_signal)
+                else:
+                    # Append new data to existing data
+                    existing_time, existing_signal = self.signal_data[selected_graph]
+                    self.signal_data[selected_graph] = (np.concatenate((existing_time, time)),
+                                                         np.concatenate((existing_signal, selected_signal)))
 
             # Clear previously plotted data for the selected graph
             self.plotted_data[selected_graph] = ([], [])
@@ -209,38 +213,99 @@ class MainWindow(QWidget):
         time = data[0].to_numpy()
         amplitude = data[1].to_numpy()
         return time, amplitude
+    
+
+    def connect_to_signal(self):
+        url = self.signalInput.text().strip()  # Get URL from input field and trim whitespace
+
+        if not url or not (url.startswith("http://") or url.startswith("https://")):
+            return  # Do nothing if URL is invalid or empty
+
+        try:
+            response = requests.get(url)  # Send a request to the API
+            response.raise_for_status()  # Raise an error for bad responses
+            data = response.json()  # Parse JSON response
+            
+            # Check for 'price' in the response
+            if 'price' in data:
+                price = float(data['price'])  # Extract price as a float
+                
+                current_time = time.time()  # Get the current time for plotting
+                selected_graph = self.plotComboBox.currentText()  # Get the selected graph from the combo box
+                if self.signal_data[selected_graph] is None:
+                    self.signal_data[selected_graph] = ([], [])  # Initialize if None
+                
+                # Append the new data to your signal data
+                self.signal_data[selected_graph][0].append(current_time)  # Time data
+                self.signal_data[selected_graph][1].append(price)  # Price data
+                
+                print(f"Current Price: {price}")  # For debugging
+                
+                # Update the graphs after adding new data
+                self.update_graphs()  # Update graphs with new data
+                
+            else:
+                print("Error: 'price' key not found in the response.")
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Error connecting to signal: {e}")
+        except ValueError as e:
+            print(f"Error parsing JSON: {e}")
+
 
     def update_graphs(self):
-      """Update all graphs with their respective ECG data."""
-      for graph_name in self.signal_data.keys():
-        if self.signal_data[graph_name] is not None:
-            time, signal = self.signal_data[graph_name]  # Unpack the tuple
-            current_index = self.time_index[graph_name]
+        """Update all graphs with their respective ECG data."""
+        for graph_name in self.signal_data.keys():
+            if self.signal_data[graph_name] is not None:
+                time, signal = self.signal_data[graph_name]  # Unpack the tuple
+                
+                # Clear the existing plot and plot new data
+                if graph_name == 'Graph 1':
+                    self.graph1.clear()
+                    
+                    # Set y-axis limits based on signal range
+                    min_signal = min(signal)  # Find the minimum value in the signal
+                    max_signal = max(signal)  # Find the maximum value in the signal
+                    
+                    padding = 0.1  # Adjust this value as needed for better visibility
+                    self.graph1.setYRange(min_signal - padding, max_signal + padding)  # Set y-axis limits
+                    
+                    self.graph1.plot(time, signal, pen='r')  # Use a white pen for better visibility
 
-            if current_index < len(signal):
-                # Append the new data point for plotting
-                self.plotted_data[graph_name][0].append(time[current_index])
-                self.plotted_data[graph_name][1].append(signal[current_index])
+                elif graph_name == 'Graph 2':
+                    self.graph2.clear()
+                    
+                    min_signal = min(signal)
+                    max_signal = max(signal)
+                    
+                    padding = 0.1
+                    self.graph2.setYRange(min_signal - padding, max_signal + padding)
+                    
+                    self.graph2.plot(time, signal, pen='r')
 
-                # Plot the full line so far
-                self.plot_signal(graph_name)                   
-                self.time_index[graph_name] += 1  # Increment time index
-            
-    def plot_signal(self, graph_name):
-        """Plot the signal on the appropriate graph."""
-        if graph_name == "Graph 1":
-            self.graph1.clear()
-            self.graph1.plot(self.plotted_data[graph_name][0], self.plotted_data[graph_name][1], pen='r')
-        elif graph_name == "Graph 2":
-            self.graph2.clear()
-            self.graph2.plot(self.plotted_data[graph_name][0], self.plotted_data[graph_name][1], pen='g')
-        elif graph_name == "Glued Signals":
-            self.gluedGraph.clear()
-            self.gluedGraph.plot(self.plotted_data[graph_name][0], self.plotted_data[graph_name][1], pen='b')
-        elif graph_name == "Graph 3":
-            self.graph3.clear()
-            self.graph3.plot(self.plotted_data[graph_name][0], self.plotted_data[graph_name][1], pen='y')
-        
+                elif graph_name == 'Glued Signals':
+                    self.gluedGraph.clear()
+                    
+                    min_signal = min(signal)
+                    max_signal = max(signal)
+                    
+                    padding = 0.1
+                    self.gluedGraph.setYRange(min_signal - padding, max_signal + padding)
+                    
+                    self.gluedGraph.plot(time, signal, pen='r')
+
+                elif graph_name == 'Graph 3':
+                    self.graph3.clear()
+                    
+                    min_signal = min(signal)
+                    max_signal = max(signal)
+                    
+                    padding = 0.1
+                    self.graph3.setYRange(min_signal - padding, max_signal + padding)
+                    
+                    self.graph3.plot(time, signal, pen='r')
+
+
     def openColorDialog(self):
         color = QColorDialog.getColor()
 
@@ -288,4 +353,4 @@ class MainWindow(QWidget):
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
-    sys.exit(app.exec_())
+    sys.exit(app.exec_())                
