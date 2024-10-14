@@ -226,16 +226,31 @@ class MainWindow(QWidget):
         self.graph3_vertical_scroll.valueChanged.connect(self.graph3_y_scroll_moved)
         self.is_playing = False 
         self.linked=False
-        # Define sampling rate
+
         self.sampling_rate = 50
         self.timer_interval = int(1000 / self.sampling_rate)  # Convert to integer
 
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_graphs)
-        self.timer.timeout.connect(self.connect_to_signal)
-        self.timer.timeout.connect(self.update_circular_graph)                      #-------------------------------------------
-        self.timer.start(self.timer_interval)  # Start timer with calculated interval
-        # self.timer.start(1000)  # Set interval to 1000 ms (1 second), adjust as needed
+        # Define sampling rates
+        self.update_graphs_sampling_rate = self.timer_interval  # 900 ms for graph updates
+        self.real_time_sampling_rate = 500      # 1000 ms for real-time updates
+        self.circular_graph_sampling_rate = 500  # 1300 ms for circular graph updates
+
+        # Create a timer for updating graphs
+        self.update_graphs_timer = QTimer(self)
+        self.update_graphs_timer.timeout.connect(self.update_graphs)  # Connect update_graphs to this timer
+        self.update_graphs_timer.start(self.update_graphs_sampling_rate)  # Start with 900 ms interval
+
+        # Create a timer for real-time updates
+        self.real_time_timer = QTimer(self)
+        self.real_time_timer.timeout.connect(self.update_real_time_graphs)
+        self.real_time_timer.timeout.connect(self.connect_to_signal)
+        self.real_time_timer.start(self.real_time_sampling_rate)  # Start with 1000 ms interval
+
+        # Create a timer for circular graph updates
+        self.circular_graph_timer = QTimer(self)
+        self.circular_graph_timer.timeout.connect(self.update_circular_graph)
+        self.circular_graph_timer.start(self.circular_graph_sampling_rate)  # Start with 1300 ms interval
+
 
         self.signal_data = {
             'Graph 1': None,
