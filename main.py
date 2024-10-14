@@ -368,6 +368,7 @@ class MainWindow(QWidget):
 
         bottomLayout.addWidget(moveBtn)
         bottomLayout.addWidget(colorBtn)
+        bottomLayout.addWidget(self.signalInput)
         bottomLayout.addWidget(snapshotBtn)
         bottomLayout.addWidget(exportReportBtn)
         bottomLayout.addWidget(showHideBtn)
@@ -554,7 +555,7 @@ class MainWindow(QWidget):
                 print(f"Current Price: {price}")  # For debugging
 
                 # Update the graphs after adding new data
-                self.update_graphs()  # Update graphs with new data
+                self.update_real_time_graphs()  # Update graphs with new data
 
             else:
                 print("Error: 'price' key not found in the response.")
@@ -579,6 +580,59 @@ class MainWindow(QWidget):
                 # Plot the full line so far
                 self.plot_signal(graph_name)
                 self.time_index[graph_name] += 1  # Increment time index for this graph
+
+    def update_real_time_graphs(self):
+        """Update all graphs with their respective ECG data."""
+        for graph_name in self.signal_data.keys():
+            if self.signal_data[graph_name] is not None:
+                time, signal = self.signal_data[graph_name]  # Unpack the tuple
+                
+                # Clear the existing plot and plot new data
+                if graph_name == 'Graph 1':
+                    self.graph1.clear()
+                    
+                    # Set y-axis limits based on signal range
+                    min_signal = min(signal)  # Find the minimum value in the signal
+                    max_signal = max(signal)  # Find the maximum value in the signal
+                    
+                    padding = 0.1  # Adjust this value as needed for better visibility
+                    self.graph1.setYRange(min_signal - padding, max_signal + padding)  # Set y-axis limits
+                    
+                    self.graph1.plot(time, signal, pen='r')  # Use a white pen for better visibility
+
+                elif graph_name == 'Graph 2':
+                    self.graph2.clear()
+                    
+                    min_signal = min(signal)
+                    max_signal = max(signal)
+                    
+                    padding = 0.1
+                    self.graph2.setYRange(min_signal - padding, max_signal + padding)
+                    
+                    self.graph2.plot(time, signal, pen='r')
+
+                elif graph_name == 'Glued Signals':
+                    self.gluedGraph.clear()
+                    
+                    min_signal = min(signal)
+                    max_signal = max(signal)
+                    
+                    padding = 0.1
+                    self.gluedGraph.setYRange(min_signal - padding, max_signal + padding)
+                    
+                    self.gluedGraph.plot(time, signal, pen='r')
+
+                elif graph_name == 'Graph 3':
+                    self.graph3.clear()
+                    
+                    min_signal = min(signal)
+                    max_signal = max(signal)
+                    
+                    padding = 0.1
+                    self.graph3.setYRange(min_signal - padding, max_signal + padding)
+                    
+                    self.graph3.plot(time, signal, pen='r')
+
                 
     def plot_signal(self, graph_name):
         """Plot the signal on the appropriate graph."""
