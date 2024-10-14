@@ -4,6 +4,7 @@ import pandas as pd
 import time
 import os
 import requests
+from PyQt5.QtCore import pyqtSignal
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
 from reportlab.platypus import Table
 from PyQt5.QtGui import QBrush, QPen, QPainter, QImage
@@ -181,7 +182,48 @@ class CircleGraph(QWidget):
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
+         # Create scrollbars for each graph
+        self.graph1_vertical_scroll = QScrollBar(Qt.Vertical)
+        self.graph1_horizontal_scroll = QScrollBar(Qt.Horizontal)
+        self.graph2_vertical_scroll = QScrollBar(Qt.Vertical)
+        self.graph2_horizontal_scroll = QScrollBar(Qt.Horizontal)
+        self.glued_vertical_scroll = QScrollBar(Qt.Vertical)
+        self.glued_horizontal_scroll = QScrollBar(Qt.Horizontal)
+        self.graph3_vertical_scroll = QScrollBar(Qt.Vertical)
+        self.graph3_horizontal_scroll = QScrollBar(Qt.Horizontal)
+        #Initialize previous values for scrollbars
+        self.prev_graph1_x_scroll = 0
+        self.prev_graph1_y_scroll = 0
+        self.prev_graph2_x_scroll = 0
+        self.prev_graph2_y_scroll = 0
+        self.prev_glued_x_scroll = 0
+        self.prev_glued_y_scroll = 0
+        self.prev_graph3_x_scroll = 0
+        self.prev_graph3_y_scroll = 0
+
+
         self.initUI()
+
+        # Connect existing scrollbars to their respective methods
+        self.graph1_horizontal_scroll.setPageStep(10)    # Adjust step size
+        self.graph1_horizontal_scroll.setSingleStep(1)   # Fine-tune step size
+        self.graph1_horizontal_scroll.valueChanged.connect(self.graph1_x_scroll_moved)
+        self.graph1_vertical_scroll.valueChanged.connect(self.graph1_y_scroll_moved)
+
+        self.graph2_horizontal_scroll.setPageStep(10)    # Adjust step size
+        self.graph2_horizontal_scroll.setSingleStep(1)   # Fine-tune step size
+        self.graph2_horizontal_scroll.valueChanged.connect(self.graph2_x_scroll_moved)
+        self.graph2_vertical_scroll.valueChanged.connect(self.graph2_y_scroll_moved)
+
+        self.glued_horizontal_scroll.setPageStep(10)    # Adjust step size
+        self.glued_horizontal_scroll.setSingleStep(1)   # Fine-tune step size
+        self.glued_horizontal_scroll.valueChanged.connect(self.glued_x_scroll_moved)
+        self.glued_vertical_scroll.valueChanged.connect(self.glued_y_scroll_moved)
+
+        self.graph3_horizontal_scroll.setPageStep(10)    # Adjust step size
+        self.graph3_horizontal_scroll.setSingleStep(1)   # Fine-tune step size
+        self.graph3_horizontal_scroll.valueChanged.connect(self.graph3_x_scroll_moved)
+        self.graph3_vertical_scroll.valueChanged.connect(self.graph3_y_scroll_moved)
         self.is_playing = False 
         self.linked=False
         # Define sampling rate
@@ -189,6 +231,7 @@ class MainWindow(QWidget):
         self.timer_interval = int(1000 / self.sampling_rate)  # Convert to integer
 
         self.timer = QTimer()
+        self.timer.timeout.connect(self.update_graphs)
         self.timer.timeout.connect(self.connect_to_signal)
         self.timer.timeout.connect(self.update_circular_graph)                      #-------------------------------------------
         self.timer.start(self.timer_interval)  # Start timer with calculated interval
@@ -314,22 +357,32 @@ class MainWindow(QWidget):
         graphLayout.addWidget(graph2Label, 0, 3)
 
         graphLayout.addWidget(self.graph1, 1, 1)
-        graphLayout.addWidget(QScrollBar(Qt.Vertical), 1, 0)  # Scroll for graph 1
-        graphLayout.addWidget(QScrollBar(Qt.Horizontal), 2, 1)  # Scroll for graph 1
+        # graphLayout.addWidget(QScrollBar(Qt.Vertical), 1, 0)  # Scroll for graph 1
+        # graphLayout.addWidget(QScrollBar(Qt.Horizontal), 2, 1)  # Scroll for graph 1
+        graphLayout.addWidget(self.graph1_vertical_scroll, 1, 0)
+        graphLayout.addWidget(self.graph1_horizontal_scroll, 2, 1)
 
         graphLayout.addWidget(self.graph2, 1, 3)
-        graphLayout.addWidget(QScrollBar(Qt.Vertical), 1, 2)  # Scroll for graph 2
-        graphLayout.addWidget(QScrollBar(Qt.Horizontal), 2, 3)  # Scroll for graph 2
+        # graphLayout.addWidget(QScrollBar(Qt.Vertical), 1, 2)  # Scroll for graph 2
+        # graphLayout.addWidget(QScrollBar(Qt.Horizontal), 2, 3)  # Scroll for graph 2
+        graphLayout.addWidget(self.graph2_vertical_scroll, 1, 2)
+        graphLayout.addWidget(self.graph2_horizontal_scroll, 2, 3)
+
 
         graphLayout.addWidget(gluedLabel, 3, 1)
         graphLayout.addWidget(self.gluedGraph, 4, 1)
-        graphLayout.addWidget(QScrollBar(Qt.Vertical), 4, 0)  # Scroll for glued signals
-        graphLayout.addWidget(QScrollBar(Qt.Horizontal), 5, 1)  # Scroll for glued signals
+        # graphLayout.addWidget(QScrollBar(Qt.Vertical), 4, 0)  # Scroll for glued signals
+        # graphLayout.addWidget(QScrollBar(Qt.Horizontal), 5, 1)  # Scroll for glued signals
+        graphLayout.addWidget(self.glued_vertical_scroll, 4, 0)
+        graphLayout.addWidget(self.glued_horizontal_scroll, 5, 1)
 
         graphLayout.addWidget(graph3Label, 3, 3)
         graphLayout.addWidget(self.graph3, 4, 3)
-        graphLayout.addWidget(QScrollBar(Qt.Vertical), 4, 2)  # Scroll for graph 3
-        graphLayout.addWidget(QScrollBar(Qt.Horizontal), 5, 3)  # Scroll for graph 3
+       # graphLayout.addWidget(QScrollBar(Qt.Vertical), 4, 2)  # Scroll for graph 3
+        # graphLayout.addWidget(QScrollBar(Qt.Horizontal), 5, 3)  # Scroll for graph 3
+        graphLayout.addWidget(self.graph3_vertical_scroll, 4, 2)
+        graphLayout.addWidget(self.graph3_horizontal_scroll, 5, 3)
+
 
         mainLayout.addLayout(graphLayout)
 
@@ -395,6 +448,101 @@ class MainWindow(QWidget):
         self.setLayout(mainLayout)
         self.setWindowTitle('Signal Viewer')
         self.show()
+
+    def graph1_x_scroll_moved(self):
+        """Handle horizontal scrolling for graph1."""
+        current_value = self.graph1_horizontal_scroll.value()
+        difference = current_value - self.prev_graph1_x_scroll
+        
+        if difference != 0:
+            self.update_graph_view(self.graph1, 'x', difference)
+        
+        # Update the previous value to the current value
+        self.prev_graph1_x_scroll = current_value
+
+    def graph1_y_scroll_moved(self):
+        """Handle vertical scrolling for graph1."""
+        current_value = self.graph1_vertical_scroll.value()
+        difference = current_value - self.prev_graph1_y_scroll
+        
+        if difference != 0:
+            self.update_graph_view(self.graph1, 'y', difference)
+        
+        # Update the previous value to the current value
+        self.prev_graph1_y_scroll = current_value
+
+    def graph2_x_scroll_moved(self):
+        current_value = self.graph2_horizontal_scroll.value()
+        difference = current_value - self.prev_graph2_x_scroll
+        
+        if difference != 0:
+            self.update_graph_view(self.graph2, 'x', difference)
+        
+        self.prev_graph2_x_scroll = current_value
+
+    def graph2_y_scroll_moved(self):
+        current_value = self.graph2_vertical_scroll.value()
+        difference = current_value - self.prev_graph2_y_scroll
+        
+        if difference != 0:
+            self.update_graph_view(self.graph2, 'y', difference)
+        
+        self.prev_graph2_y_scroll = current_value
+
+    def glued_x_scroll_moved(self):
+        current_value = self.glued_horizontal_scroll.value()
+        difference = current_value - self.prev_glued_x_scroll
+        
+        if difference != 0:
+            self.update_graph_view(self.gluedGraph, 'x', difference)
+        
+        self.prev_glued_x_scroll = current_value
+
+    def glued_y_scroll_moved(self):
+        current_value = self.glued_vertical_scroll.value()
+        difference = current_value - self.prev_glued_y_scroll
+        
+        if difference != 0:
+            self.update_graph_view(self.gluedGraph, 'y', difference)
+        
+        self.prev_glued_y_scroll = current_value
+
+    def graph3_x_scroll_moved(self):
+        current_value = self.graph3_horizontal_scroll.value()
+        difference = current_value - self.prev_graph3_x_scroll
+        
+        if difference != 0:
+            self.update_graph_view(self.graph3, 'x', difference)
+        
+        self.prev_graph3_x_scroll = current_value
+
+    def graph3_y_scroll_moved(self):
+        current_value = self.graph3_vertical_scroll.value()
+        difference = current_value - self.prev_graph3_y_scroll
+        
+        if difference != 0:
+            self.update_graph_view(self.graph3, 'y', difference)
+        
+        self.prev_graph3_y_scroll = current_value
+    
+    def update_graph_view(self, graph, axis, difference):
+        """Update graph's view range based on scroll movement."""
+        current_range = graph.viewRange()  # Get the current view range
+
+        # Scaling factor to control scroll sensitivity
+        scaling_factor = 0.1
+
+        if axis == 'x':
+            # Adjust X-axis range based on scroll difference (scaled down)
+            new_x_min = current_range[0][0] + difference * scaling_factor
+            new_x_max = current_range[0][1] + difference * scaling_factor
+            graph.setXRange(new_x_min, new_x_max, padding=0)
+        elif axis == 'y':
+            # Adjust Y-axis range based on scroll difference
+            new_y_min = current_range[1][0] + difference
+            new_y_max = current_range[1][1] + difference
+            graph.setYRange(new_y_min, new_y_max, padding=0)
+
 
     def show_move_dialog(self):
         dialog = MoveDialog()
