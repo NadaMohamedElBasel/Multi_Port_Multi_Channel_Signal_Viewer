@@ -4,8 +4,10 @@ import pandas as pd
 import time
 import os
 import requests
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.platypus import Table
 from PyQt5.QtGui import QBrush, QPen, QPainter, QImage
-from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QRadioButton,
+from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QRadioButton, QDialog,QDialogButtonBox,QGroupBox,QButtonGroup,
                              QVBoxLayout, QHBoxLayout, QSlider, QLineEdit,
                              QScrollBar, QGridLayout, QComboBox, QFileDialog, QColorDialog, QMessageBox)
 from PyQt5.QtCore import Qt, QTimer
@@ -16,6 +18,90 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 from datetime import datetime
+
+class Signal:
+    def __init__(self, file_name, file_path, data, color, graph, show):
+        self.name = file_name
+        self.path = file_path
+        self.data = data
+        self.color = color
+        self.graph = graph
+        self.show = show
+        self.last_index = 0  # Initialize last index to 0
+
+    def __str__(self):
+        return (f"Name: {self.name}, Path: {self.path}, Data: {self.data}, Color: {self.color}, Graph: {self.graph}, "
+                f"Show: {self.show}")
+
+class MoveDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Move Signal")
+        layout = QVBoxLayout()
+
+        # Group 1: Source selection
+        self.source_group = QGroupBox("Select source graph")
+        source_layout = QVBoxLayout()
+        self.source_buttons = QButtonGroup(self)
+        
+        self.source_radiobuttons = {
+            'graph1': QRadioButton("Graph 1"),
+            'graph2': QRadioButton("Graph 2"),
+            'glued_signal': QRadioButton("Glued Signal"),
+            'graph3': QRadioButton("Graph 3")
+        }
+
+        for i, (key, rb) in enumerate(self.source_radiobuttons.items()):
+            source_layout.addWidget(rb)
+            self.source_buttons.addButton(rb, i)
+
+        self.source_group.setLayout(source_layout)
+        layout.addWidget(self.source_group)
+
+        # Group 2: Destination selection
+        self.destination_group = QGroupBox("Select destination graph")
+        destination_layout = QVBoxLayout()
+        self.destination_buttons = QButtonGroup(self)
+
+        self.destination_radiobuttons = {
+            'graph1': QRadioButton("Graph 1"),
+            'graph2': QRadioButton("Graph 2"),
+            'glued_signal': QRadioButton("Glued Signal"),
+            'graph3': QRadioButton("Graph 3")
+        }
+
+        for i, (key, rb) in enumerate(self.destination_radiobuttons.items()):
+            destination_layout.addWidget(rb)
+            self.destination_buttons.addButton(rb, i)
+
+        self.destination_group.setLayout(destination_layout)
+        layout.addWidget(self.destination_group)
+
+        # OK/Cancel buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.setLayout(layout)
+
+    def get_selected_graphs(self):
+        source_graph = None
+        destination_graph = None
+
+        for key, rb in self.source_radiobuttons.items():
+            if rb.isChecked():
+                source_graph = key
+
+        for key, rb in self.destination_radiobuttons.items():
+            if rb.isChecked():
+                destination_graph = key
+
+        return source_graph, destination_graph
+
+
+
 
 
 class CircleGraph(QWidget):
@@ -91,12 +177,13 @@ class CircleGraph(QWidget):
         if self.angle >= 2 * np.pi:
             self.angle = 0  # Reset the angle after completing the circle
         self.update()  # Trigger a repaint
-
+    
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.initUI()
-
+        self.is_playing = False 
+        self.linked=False
         # Define sampling rate
         self.sampling_rate = 50
         self.timer_interval = int(1000 / self.sampling_rate)  # Convert to integer
@@ -113,6 +200,17 @@ class MainWindow(QWidget):
             'Glued Signals': None,
             'Graph 3': None
         }
+        # Create separate timers for each graph
+        self.timers = {
+            'Graph 1': QTimer(self),
+            'Graph 2': QTimer(self),
+            'Glued Signals': QTimer(self),
+            'Graph 3': QTimer(self)
+        }
+        
+        for timer in self.timers.values():
+            timer.timeout.connect(self.update_graphs)
+
         self.time_index = {
             'Graph 1': 0,
             'Graph 2': 0,
@@ -127,7 +225,28 @@ class MainWindow(QWidget):
             'Glued Signals': ([], []),
             'Graph 3': ([], [])
         }
+        self.time_index = {key: 0 for key in self.signal_data.keys()}
+        self.plotted_data = {key: ([], []) for key in self.signal_data.keys()}
 
+        # Initialize graph colors
+        self.graph_colors = {
+            'Graph 1': 'r',
+            'Graph 2': 'g',
+            'Glued Signals': 'b',
+            'Graph 3': 'y'
+    }
+        self.hidden_signals = {
+            'Graph 1': False,
+            'Graph 2': False,
+            'Glued Signals': False,
+            'Graph 3': False
+    }
+        self.is_playing_graph = {
+        'Graph 1': False,
+        'Graph 2': False,
+        'Glued Signals': False,
+        'Graph 3': False
+    }
         self.plotComboBox.setCurrentIndex(1)  # Set default to first item
 
     def initUI(self):
@@ -231,14 +350,14 @@ class MainWindow(QWidget):
         zoomOutBtn = QPushButton('Zoom Out')
         linkBtn = QPushButton('Link')
         showHideBtn = QPushButton('Show / Hide')
-        playPauseBtn = QPushButton('Play / Pause')
+        self.playPauseBtn = QPushButton('Play / Pause')
         rewindBtn = QPushButton('Rewind')
         zoomInBtn = QPushButton('Zoom In')
 
         bottomLayout.addWidget(zoomOutBtn)
         bottomLayout.addWidget(linkBtn)
         bottomLayout.addWidget(showHideBtn)
-        bottomLayout.addWidget(playPauseBtn)
+        bottomLayout.addWidget(self.playPauseBtn)
         bottomLayout.addWidget(rewindBtn)
         bottomLayout.addWidget(zoomInBtn)
 
@@ -251,6 +370,8 @@ class MainWindow(QWidget):
         bottomLayout.addWidget(colorBtn)
         bottomLayout.addWidget(snapshotBtn)
         bottomLayout.addWidget(exportReportBtn)
+        bottomLayout.addWidget(showHideBtn)
+
 
         mainLayout.addLayout(bottomLayout)
 
@@ -260,11 +381,94 @@ class MainWindow(QWidget):
         colorBtn.clicked.connect(self.openColorDialog)
         snapshotBtn.clicked.connect(self.take_snapshot)
         exportReportBtn.clicked.connect(self.export_report)
+        rewindBtn.clicked.connect(self.rewind)
+        self.playPauseBtn.clicked.connect(self.toggle_play_pause)
+        zoomInBtn.clicked.connect(self.zoom_in)
+        zoomOutBtn.clicked.connect(self.zoom_out)
+        linkBtn.clicked.connect(self.linkGraphs)
+        showHideBtn.clicked.connect(self.toggle_signal_visibility)
+        moveBtn.clicked.connect(self.show_move_dialog)
+
 
         # Set main layout
         self.setLayout(mainLayout)
         self.setWindowTitle('Signal Viewer')
         self.show()
+
+    def show_move_dialog(self):
+        dialog = MoveDialog()
+        if dialog.exec_() == QDialog.Accepted:
+            source_graph, destination_graph = dialog.get_selected_graphs()
+            
+            # Standardize graph names based on their keys
+            graph_names = {
+                'graph1': 'Graph 1',
+                'graph2': 'Graph 2',
+                'glued_signal': 'Glued Signals',
+                'graph3': 'Graph 3'
+            }
+
+            # Ensure valid selection
+            source_graph = graph_names.get(source_graph, None)
+            destination_graph = graph_names.get(destination_graph, None)
+            
+            if source_graph and destination_graph:
+                self.move_signal(source_graph, destination_graph)  
+    def refresh_plot(self, graph_name):
+        # Refresh the plot by replotting data for the given graph
+        if graph_name == 'Graph 1':
+            self.graph1.plot(self.plotted_data['Graph 1'][0], self.plotted_data['Graph 1'][1], clear=True)
+        elif graph_name == 'Graph 2':
+            self.graph2.plot(self.plotted_data['Graph 2'][0], self.plotted_data['Graph 2'][1], clear=True)
+        elif graph_name == 'Glued Signals':
+            self.gluedGraph.plot(self.plotted_data['Glued Signals'][0], self.plotted_data['Glued Signals'][1], clear=True)
+        elif graph_name == 'Graph 3':
+            self.graph3.plot(self.plotted_data['Graph 3'][0], self.plotted_data['Graph 3'][1], clear=True)
+            ########################## move signal with dynamic display but starting from the beginning ################ 
+    def move_signal(self, source, destination): 
+        if source != destination and self.is_playing_graph[source]: 
+            # Retrieve the entire signal data from the source
+            signal_data = self.signal_data[source]  # Get the current signal data for the source
+            
+            # Check if there's any signal data to move
+            if signal_data is not None:
+                # Copy the signal data to the destination graph
+                self.signal_data[destination] = signal_data
+
+                # Clear the source data after moving
+                self.signal_data[source] = None  # Clear source graph data
+
+                # Clear the plot on the source graph
+                self.clear_plot(source)
+
+                # Refresh both source and destination plots
+                #self.refresh_plot(source)
+                self.refresh_plot(destination)
+
+                # Update playing states
+                self.is_playing_graph[destination] = True  # Start playing on the destination graph
+                self.is_playing_graph[source] = False  # Stop playing on the source graph
+
+                # Plot the updated signal on the destination graph
+                self.plot_signal(destination)
+            
+                
+                self.update_graphs()  # Update all graphs
+
+    def clear_plot(self, graph_name):
+        # Clear the plot by setting its data to empty lists
+        if graph_name == 'Graph 1':
+            self.graph1.plot([], [], clear=True)  # Clear Graph 1
+        elif graph_name == 'Graph 2':
+            self.graph2.plot([], [], clear=True)  # Clear Graph 2
+        elif graph_name == 'Glued Signals':
+            self.gluedGraph.plot([], [], clear=True)  # Clear Glued Signals
+        elif graph_name == 'Graph 3':
+            self.graph3.plot([], [], clear=True)  # Clear Graph 3
+
+
+
+    
 
     def update_timer_interval(self):
         speed = self.cineSpeedSlider.value()  # Get the current value of the slider
@@ -297,6 +501,8 @@ class MainWindow(QWidget):
                             # Check if the current signal is already loaded; If not, initialize it
                             if self.signal_data[selected_graph] is None:
                                 self.signal_data[selected_graph] = (time, selected_signal)
+                                self.time_index[selected_graph] = 0
+
                             else:
                                 # Append new data to existing data
                                 existing_time, existing_signal = self.signal_data[selected_graph]
@@ -307,6 +513,11 @@ class MainWindow(QWidget):
                         self.plotted_data[selected_graph] = ([], [])
                         # Update the graph with the newly loaded signal
                         self.update_graphs()
+                        # Set the graph to play after loading
+                        self.is_playing_graph[selected_graph] = True
+                        self.playPauseBtn.setText('Pause') 
+                        self.toggle_play_pause()
+
 
     def load_signal_data(self, file_name):
         if self.plotComboBox.currentText() != 'Graph 3':
@@ -356,52 +567,242 @@ class MainWindow(QWidget):
     def update_graphs(self):
         """Update all graphs with their respective ECG data."""
         for graph_name in self.signal_data.keys():
-            if self.signal_data[graph_name] is not None:
+              if self.signal_data[graph_name] is not None and self.is_playing_graph[graph_name]:
                 time, signal = self.signal_data[graph_name]  # Unpack the tuple
+                current_index = self.time_index[graph_name]
+          
+                if current_index < len(signal):
+                # Append the new data point for plotting
+                 self.plotted_data[graph_name][0].append(time[current_index])
+                 self.plotted_data[graph_name][1].append(signal[current_index])
 
-                # Clear the existing plot and plot new data
-                if graph_name == 'Graph 1':
-                    self.graph1.clear()
+                # Plot the full line so far
+                self.plot_signal(graph_name)
+                self.time_index[graph_name] += 1  # Increment time index for this graph
+                
+    def plot_signal(self, graph_name):
+        """Plot the signal on the appropriate graph."""
+        if self.hidden_signals[graph_name]:
+            # If the signal is hidden, clear the graph and return
+            if graph_name == "Graph 1":
+                self.graph1.clear()
+            elif graph_name == "Graph 2":
+                self.graph2.clear()
+            elif graph_name == "Glued Signals":
+                self.gluedGraph.clear()
+        
+            return  # Don't plot anything if hidden
 
-                    # Set y-axis limits based on signal range
-                    min_signal = min(signal)  # Find the minimum value in the signal
-                    max_signal = max(signal)  # Find the maximum value in the signal
+        color = self.graph_colors[graph_name]  # Get the current color for the graph
+        if graph_name == "Graph 1":
+            self.graph1.clear()
+            self.graph1.plot(self.plotted_data[graph_name][0], self.plotted_data[graph_name][1], pen=color)
+        elif graph_name == "Graph 2":
+            self.graph2.clear()
+            self.graph2.plot(self.plotted_data[graph_name][0], self.plotted_data[graph_name][1], pen=color)
+        elif graph_name == "Glued Signals":
+            self.gluedGraph.clear()
+            self.gluedGraph.plot(self.plotted_data[graph_name][0], self.plotted_data[graph_name][1], pen=color)
+        elif graph_name == "Graph 3":
+            self.graph3.clear()
+            self.graph3.plot(self.plotted_data[graph_name][0], self.plotted_data[graph_name][1], pen=color)
 
-                    padding = 0.1  # Adjust this value as needed for better visibility
-                    self.graph1.setYRange(min_signal - padding, max_signal + padding)  # Set y-axis limits
+    def toggle_signal_visibility(self):
+        """Toggle the visibility of the selected graph's signal."""
+        selected_graph = self.plotComboBox.currentText()
+         #######linking 
+        if self.linked==True &((selected_graph=="Graph 1")or(selected_graph=="Graph 2")):
+         if self.is_playing_graph["Graph 1"] and self.is_playing_graph["Graph 2"]:
+            if "Graph 1" in self.hidden_signals or "Graph 2" in self.hidden_signals:
+                self.hidden_signals["Graph 1"] = not self.hidden_signals["Graph 1"]
+                self.hidden_signals["Graph 2"] = not self.hidden_signals["Graph 2"]
+                self.update_graphs() 
+        #if selected_graph in self.hidden_signals:
+        else:        
+         if selected_graph in self.hidden_signals:
+            self.hidden_signals[selected_graph] = not self.hidden_signals[selected_graph]
+        self.update_graphs()  # Refresh the graph to apply visibility changes
+       
 
-                    self.graph1.plot(time, signal, pen='r')  # Use a white pen for better visibility
+    def rewind(self):
+      """Rewind the selected graph to the beginning."""
+      selected_graph = self.plotComboBox.currentText()
+      if selected_graph in self.signal_data:
+        # Reset time index for the selected graph
+        self.time_index[selected_graph] = 0
+        # Clear the plotted data
+        self.plotted_data[selected_graph] = ([], [])
+        # Clear the graph
+        self.plot_signal(selected_graph)  # Refresh the graph  
+         ################### linking working ################
+      if self.linked==True &((selected_graph=="Graph 1")or(selected_graph=="Graph 2")):
+         if self.is_playing_graph["Graph 1"] and self.is_playing_graph["Graph 2"]:
+            self.time_index["Graph 1"] = 0
+            self.time_index["Graph 2"] = 0
+            self.plotted_data["Graph 1"] = ([], [])
+            self.plotted_data["Graph 2"] = ([], [])
+            self.plot_signal("Graph 1")
+            self.plot_signal("Graph 2")
 
-                elif graph_name == 'Graph 2':
-                    self.graph2.clear()
+    def toggle_play_pause(self):
+     """Toggle between play and pause."""
+     selected_graph = self.plotComboBox.currentText()
 
-                    min_signal = min(signal)
-                    max_signal = max(signal)
+     # Toggle the selected graph's play/pause state
+     if selected_graph in self.is_playing_graph:
+        self.is_playing_graph[selected_graph] = not self.is_playing_graph[selected_graph]
 
-                    padding = 0.1
-                    self.graph2.setYRange(min_signal - padding, max_signal + padding)
+        if self.is_playing_graph[selected_graph]:
+            # Start the timer for the selected graph
+            self.timers[selected_graph].start(int(self.timer_interval))
+            self.playPauseBtn.setText('Pause')
+        else:
+            # Stop the timer for the selected graph
+            self.timers[selected_graph].stop()
+            self.playPauseBtn.setText('Play')
 
-                    self.graph2.plot(time, signal, pen='r')
+      # Handle linking for Graph 1 and Graph 2
+     if self.linked and (selected_graph == "Graph 1" or selected_graph == "Graph 2"):
+        graph1_playing = self.is_playing_graph["Graph 1"]
+        graph2_playing = self.is_playing_graph["Graph 2"]
 
-                elif graph_name == 'Glued Signals':
-                    self.gluedGraph.clear()
+        # If either graph is playing, stop both
+        if graph1_playing or graph2_playing:
+            self.is_playing_graph["Graph 1"] = False
+            self.is_playing_graph["Graph 2"] = False
+            self.timers["Graph 1"].stop()
+            self.timers["Graph 2"].stop()
+            self.playPauseBtn.setText('Play')
+        else:
+            # If both are paused, start both
+            self.is_playing_graph["Graph 1"] = True
+            self.is_playing_graph["Graph 2"] = True
+            self.timers["Graph 1"].start(int(self.timer_interval))
+            self.timers["Graph 2"].start(int(self.timer_interval))
+            self.playPauseBtn.setText('Pause')
 
-                    min_signal = min(signal)
-                    max_signal = max(signal)
+    
+    def zoom_in(self):
+      selected_graph = self.plotComboBox.currentText()
+      if selected_graph in self.signal_data and self.signal_data[selected_graph] is not None:
+        current_view = self.get_current_view(selected_graph)
+        new_range = (
+            max(current_view[0] + (current_view[1] - current_view[0]) * 0.25, self.get_signal_bounds(selected_graph)[0]),
+            min(current_view[1] - (current_view[1] - current_view[0]) * 0.25, self.get_signal_bounds(selected_graph)[1])
+        )
+        self.set_view_range(selected_graph, new_range)
+       ############### Linking working #############
+      if self.linked==True &((selected_graph=="Graph 1")or(selected_graph=="Graph 2")):
+         if self.is_playing_graph["Graph 1"] and self.is_playing_graph["Graph 2"]:
+            current_view = self.get_current_view("Graph 1")
+            new_range = (
+                max(current_view[0] + (current_view[1] - current_view[0]) * 0.25, self.get_signal_bounds("Graph 1")[0]),
+                min(current_view[1] - (current_view[1] - current_view[0]) * 0.25, self.get_signal_bounds("Graph 2")[1])
+            )
+            self.set_view_range("Graph 1", new_range)
+            self.set_view_range("Graph 2", new_range)
+  
 
-                    padding = 0.1
-                    self.gluedGraph.setYRange(min_signal - padding, max_signal + padding)
+    def zoom_out(self):
+       selected_graph = self.plotComboBox.currentText()
+       if selected_graph in self.signal_data and self.signal_data[selected_graph] is not None:
+        current_view = self.get_current_view(selected_graph)
+        new_range = (
+            max(current_view[0] - (current_view[1] - current_view[0]) * 0.25, self.get_signal_bounds(selected_graph)[0]),
+            min(current_view[1] + (current_view[1] - current_view[0]) * 0.25, self.get_signal_bounds(selected_graph)[1])
+        )
+        self.set_view_range(selected_graph, new_range) 
 
-                    self.gluedGraph.plot(time, signal, pen='r')
+         ############### Linking working #############
+       if self.linked==True &((selected_graph=="Graph 1")or(selected_graph=="Graph 2")):
+         if self.is_playing_graph["Graph 1"] and self.is_playing_graph["Graph 2"]:
+            current_view = self.get_current_view("Graph 1")
+            new_range = (
+                max(current_view[0] - (current_view[1] - current_view[0]) * 0.25, self.get_signal_bounds("Graph 1")[0]),
+                min(current_view[1] + (current_view[1] - current_view[0]) * 0.25, self.get_signal_bounds("Graph 1")[1])
+            )
+            self.set_view_range("Graph 1", new_range) 
+            self.set_view_range("Graph 2", new_range)
 
+    def recenter_view(self, graph_name):
+     """Recenter the view to focus on the latest data point."""
+     if graph_name in self.plotted_data and self.plotted_data[graph_name][0]:
+        # Focus on the latest point added
+        last_time = self.plotted_data[graph_name][0][-1]
+        view_range = self.get_current_view(graph_name)
+        
+        # Adjust the view range to keep it centered around the last time point
+        new_range = (
+            max(last_time - (view_range[1] - view_range[0]) / 2, self.get_signal_bounds(graph_name)[0]),
+            min(last_time + (view_range[1] - view_range[0]) / 2, self.get_signal_bounds(graph_name)[1])
+        )
+        self.set_view_range(graph_name, new_range)
 
+    def get_signal_bounds(self, graph_name):
+     if graph_name in self.signal_data and self.signal_data[graph_name] is not None:
+        time, _ = self.signal_data[graph_name]
+        return time[0], time[-1]  # Return the min and max time
+     return 0, 1  # Default bounds if no data   
+
+    def get_current_view(self, graph_name):
+        if graph_name == "Graph 1":
+            return self.graph1.viewRange()[0]
+        elif graph_name == "Graph 2":
+            return self.graph2.viewRange()[0]
+        elif graph_name == "Glued Signals":
+            return self.gluedGraph.viewRange()[0]
+        elif graph_name == "Graph 3":
+            return self.graph3.viewRange()[0]
+
+    def set_view_range(self, graph_name, new_range):
+     min_bound, max_bound = self.get_signal_bounds(graph_name)
+     new_range = (max(new_range[0], min_bound), min(new_range[1], max_bound))
+    
+     if graph_name == "Graph 1":
+        self.graph1.setXRange(*new_range)
+     elif graph_name == "Graph 2":
+        self.graph2.setXRange(*new_range)
+     elif graph_name == "Glued Signals":
+        self.gluedGraph.setXRange(*new_range)
+     elif graph_name == "Graph 3":
+        self.graph3.setXRange(*new_range)
+
+    def openColorDialog(self):
+       """Open a color dialog to change the color of the selected graph."""
+       selected_graph = self.plotComboBox.currentText()
+       color = QColorDialog.getColor()
+
+       if color.isValid():
+        # Update the color for the selected graph
+        self.graph_colors[selected_graph] = color.name()  # Store the color name
+        self.plot_signal(selected_graph)  # Re-plot the graph with the new color
+         ############# linking working #############
+       if self.linked==True &((selected_graph=="Graph 1")or(selected_graph=="Graph 2")):
+         if self.is_playing_graph["Graph 1"] and self.is_playing_graph["Graph 2"]:
+            self.graph_colors["Graph 1"] = color.name() 
+            self.graph_colors["Graph 2"] = color.name() 
+            self.plot_signal("Graph 1")
+            self.plot_signal("Graph 2")
+     
+    def linkGraphs(self):
+        if self.linked:
+            # Unlink graph1 and graph2
+            self.graph1.setXLink(None)
+            self.graph2.setXLink(None)
+            self.linked = False
+        else:
+            # Link graph1 and graph2
+            self.graph1.setXLink(self.graph2)
+            x_range = self.graph1.viewRange()[0]
+            self.graph2.setXRange(x_range[0], x_range[1])
+            self.linked = True  
+               
     def update_circular_graph(self):
         if self.graph3.data is not None:
             self.graph3.update_circular_graph()  # Update graph for the current index
         else:
             self.stop_cine_mode()  # Stop if there is no data
-    def openColorDialog(self):
-        color = QColorDialog.getColor()
+
 
     def start_cine_mode(self):
         if self.data is not None:
@@ -409,11 +810,6 @@ class MainWindow(QWidget):
 
     def stop_cine_mode(self):
         self.timer.stop()
-
-    def rewind(self):
-        self.graphWidget.angle = 0  # Reset to the beginning
-        self.graphWidget.update()
-
 
     def take_snapshot(self):
         # Specify the directory where the snapshots will be saved
@@ -442,19 +838,20 @@ class MainWindow(QWidget):
     def export_report(self):
         # Create the PDF file name based on the current date and time
         now = datetime.now()
-        report_filename = f"reports/report_{now.strftime('%Y%m%d_%H%M%S')}.pdf"
+        report_filename = f"reports/report_{now.strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
 
         # Create a canvas object
         c = canvas.Canvas(report_filename, pagesize=letter)
         width, height = letter
 
         # Add images and text
-        c.drawImage("images/uni-logo.png", width - 150, height - 50, width=100, height=50)
-        c.drawImage("images/sbme-logo.jpg", 50, height - 50, width=100, height=50)
+        logo_height = 70  # height of the logo in the header
+        c.drawImage("images/uni-logo.png", width - 150, height - logo_height - 40, width=100, height=logo_height)  # right side
+        c.drawImage("images/sbme-logo.jpg", 50, height - logo_height - 40, width=100, height=logo_height)  # left side
         
         # Title in the middle
-        c.setFont("Helvetica-Bold", 20)
-        c.drawCentredString(width / 2, height - 70, "Signal Report")
+        c.setFont("Helvetica-Bold", 22)
+        c.drawCentredString(width / 2, height - 90, "Biological Signal Report")
 
         # Take snapshot of "Glued Signals" graph
         snapshot_path = f"snapshots/snapshot_{now.strftime('%Y%m%d_%H%M%S')}.png"
@@ -462,11 +859,61 @@ class MainWindow(QWidget):
         exporter.export(snapshot_path)
 
         # Add the snapshot to the PDF
-        c.drawImage(snapshot_path, 50, height - 200, width=500, height=200)  # Adjust positioning and size
+        snapshot_y_position = height - logo_height - 100  # Adjust this to place it below the title
+        c.drawImage(snapshot_path, 50, snapshot_y_position - 200, width=500, height=200)  # Adjust positioning and size
+
+        # Gather data from the gluedGraph (assuming it’s a PyQtGraph plot with data)
+        # Extract the data from the graph for statistics calculation
+        plot_data = self.gluedGraph.plotItem.listDataItems()[0].getData()  # Assuming the first data item
+        y_data = plot_data[1]  # Get the y-values for statistics
+
+        # Calculate statistics
+        mean = np.mean(y_data)
+        median = np.median(y_data)
+        std_dev = np.std(y_data)
+        min_val = np.min(y_data)
+        max_val = np.max(y_data)
+
+        # Create the table data
+        table_data = [
+            ['Statistic', 'Value'],
+            ['Mean', f'{mean:.5f}'],
+            ['Median', f'{median:.5f}'],
+            ['Std_dev', f'{std_dev:.5f}'],
+            ['Min', f'{min_val:.5f}'],
+            ['Max', f'{max_val:.5f}'],
+        ]
+
+        # Create the table
+        table = Table(table_data, colWidths=[200, 200])
+
+        # Add style to the table
+        style = TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.black),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ])
+        table.setStyle(style)
+
+        # Convert table into a canvas element
+        table.wrapOn(c, width, height)
+        table.drawOn(c, 103, snapshot_y_position - 370)  # Adjust positioning based on where you want the table
+
 
         # Finalize the PDF
         c.showPage()
         c.save()
+
+        # Show success message
+        QMessageBox.information(self, "Export Report", f"Report saved as {report_filename}.")
+
+
+    
+    
 
         # Show success message
         QMessageBox.information(self, "Export Report", f"Report saved as {report_filename}.")
