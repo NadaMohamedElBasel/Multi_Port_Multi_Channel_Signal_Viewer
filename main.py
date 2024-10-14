@@ -83,6 +83,12 @@ class CircleGraph(QWidget):
                     if idx == current_index:  # Check if this is the current detected index
                         painter.setPen(QPen(Qt.white, 0.9))
                         painter.drawText(int(center_x + x) + 5, int(center_y + y) - 5, f"{value:.1f}")
+    def update_circular_graph(self):
+        self.angle += np.pi / 90  # Update the angle at a fixed rate
+        if self.angle >= 2 * np.pi:
+            self.angle = 0  # Reset the angle after completing the circle
+        self.update()  # Trigger a repaint
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -94,6 +100,7 @@ class MainWindow(QWidget):
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.connect_to_signal)
+        self.timer.timeout.connect(self.update_circular_graph)                      #-------------------------------------------
         self.timer.start(self.timer_interval)  # Start timer with calculated interval
         # self.timer.start(1000)  # Set interval to 1000 ms (1 second), adjust as needed
 
@@ -207,9 +214,12 @@ class MainWindow(QWidget):
         # Cine Speed Slider
         cineSpeedLayout = QHBoxLayout()
         cineSpeedLabel = QLabel('Cine Speed:')
-        cineSpeedSlider = QSlider(Qt.Horizontal)
+        self.cineSpeedSlider = QSlider(Qt.Horizontal)
+        self.cineSpeedSlider.setRange(1, 100)  # Set range for speed (1ms to 100ms)
+        self.cineSpeedSlider.setValue(10)  # Default speed value (10ms)
+        self.cineSpeedSlider.valueChanged.connect(self.update_timer_interval)  # Connect slider to function
         cineSpeedLayout.addWidget(cineSpeedLabel)
-        cineSpeedLayout.addWidget(cineSpeedSlider)
+        cineSpeedLayout.addWidget(self.cineSpeedSlider)
 
         mainLayout.addLayout(cineSpeedLayout)
 
@@ -252,35 +262,55 @@ class MainWindow(QWidget):
         self.setWindowTitle('Signal Viewer')
         self.show()
 
+    def update_timer_interval(self):
+        speed = self.cineSpeedSlider.value()  # Get the current value of the slider
+        self.timer_interval = 1000 / speed  # Calculate the new timer interval
+        self.timer.start(int(self.timer_interval))  # Update the timer with the new interval
+
     def openFile(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "", "CSV Files (*.csv);;All Files (*)")
-        if file_name:
-            # Load the data from the file
-            time, selected_signal = self.load_signal_data(file_name)
-            selected_graph = self.plotComboBox.currentText()
+                if self.plotComboBox.currentText() == 'Graph 3':
+                    # Open a file dialog to browse the PC to select a signal file
+                    file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "",
+                                                               "Text Files (*.txt);;All Files (*)")
+                    if file_name:
+                        self.data = np.loadtxt(file_name)  # Load the data from the file
+                        self.graph3.data = self.data  # Pass the data to the graph widget
+                        self.graph3.angle = 0  # Reset the angle for radar mode
 
-            # Store the loaded signal in the corresponding graph's entry
-            if selected_graph in self.signal_data:
-                # Check if the current signal is already loaded; If not, initialize it
-                if self.signal_data[selected_graph] is None:
-                    self.signal_data[selected_graph] = (time, selected_signal)
-                else:
-                    # Append new data to existing data
-                    existing_time, existing_signal = self.signal_data[selected_graph]
-                    self.signal_data[selected_graph] = (np.concatenate((existing_time, time)),
-                                                        np.concatenate((existing_signal, selected_signal)))
+                        # Start displaying the signal in cine mode
+                        self.start_cine_mode()
 
-            # Clear previously plotted data for the selected graph
-            self.plotted_data[selected_graph] = ([], [])
-            # Update the graph with the newly loaded signal
-            self.update_graphs()
+                else :
+                    file_name, _ = QFileDialog.getOpenFileName(self, "Open File", "",
+                                                               "CSV Files (*.csv);;All Files (*)")
+                    if file_name:
+                        # Load the data from the file
+                        time, selected_signal = self.load_signal_data(file_name)
+                        selected_graph = self.plotComboBox.currentText()
+
+                        # Store the loaded signal in the corresponding graph's entry
+                        if selected_graph in self.signal_data:
+                            # Check if the current signal is already loaded; If not, initialize it
+                            if self.signal_data[selected_graph] is None:
+                                self.signal_data[selected_graph] = (time, selected_signal)
+                            else:
+                                # Append new data to existing data
+                                existing_time, existing_signal = self.signal_data[selected_graph]
+                                self.signal_data[selected_graph] = (np.concatenate((existing_time, time)),
+                                                                    np.concatenate((existing_signal, selected_signal)))
+
+                        # Clear previously plotted data for the selected graph
+                        self.plotted_data[selected_graph] = ([], [])
+                        # Update the graph with the newly loaded signal
+                        self.update_graphs()
 
     def load_signal_data(self, file_name):
-        """Load ECG data from a CSV file."""
-        data = pd.read_csv(file_name, header=None)
-        time = data[0].to_numpy()
-        amplitude = data[1].to_numpy()
-        return time, amplitude
+        if self.plotComboBox.currentText() != 'Graph 3':
+            """Load ECG data from a CSV file."""
+            data = pd.read_csv(file_name, header=None)
+            time = data[0].to_numpy()
+            amplitude = data[1].to_numpy()
+            return time, amplitude
 
     def connect_to_signal(self):
         url = self.signalInput.text().strip()  # Get URL from input field and trim whitespace
@@ -360,24 +390,26 @@ class MainWindow(QWidget):
 
                     self.gluedGraph.plot(time, signal, pen='r')
 
-                elif graph_name == 'Graph 3':
-                    self.graph3.clear()
-
-                    min_signal = min(signal)
-                    max_signal = max(signal)
-
-                    padding = 0.1
-                    self.graph3.setYRange(min_signal - padding, max_signal + padding)
-
-                    self.graph3.plot(time, signal, pen='r')
 
     def update_circular_graph(self):
-        self.angle += np.pi / 90  # Update the angle at a fixed rate
-        if self.angle >= 2 * np.pi:
-            self.angle = 0  # Reset the angle after completing the circle
-        self.update()  # Trigger a repaint
+        if self.graph3.data is not None:
+            self.graph3.update_circular_graph()  # Update graph for the current index
+        else:
+            self.stop_cine_mode()  # Stop if there is no data
     def openColorDialog(self):
         color = QColorDialog.getColor()
+
+    def start_cine_mode(self):
+        if self.data is not None:
+            self.timer.start(100)  # Update every 100 ms
+
+    def stop_cine_mode(self):
+        self.timer.stop()
+
+    def rewind(self):
+        self.graphWidget.angle = 0  # Reset to the beginning
+        self.graphWidget.update()
+
 
     def exportReport(self):
         pdf_file_name, _ = QFileDialog.getSaveFileName(self, "Save PDF", "", "PDF Files (*.pdf)")
