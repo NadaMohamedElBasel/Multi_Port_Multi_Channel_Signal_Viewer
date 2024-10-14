@@ -233,7 +233,7 @@ class MainWindow(QWidget):
         # Define sampling rates
         self.update_graphs_sampling_rate = self.timer_interval  # 900 ms for graph updates
         self.real_time_sampling_rate = 500      # 1000 ms for real-time updates
-        self.circular_graph_sampling_rate = 500  # 1300 ms for circular graph updates
+        self.circular_graph_sampling_rate = 700  # 1300 ms for circular graph updates
 
         # Create a timer for updating graphs
         self.update_graphs_timer = QTimer(self)
