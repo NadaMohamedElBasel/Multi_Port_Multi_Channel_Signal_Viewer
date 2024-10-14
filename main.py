@@ -2,17 +2,20 @@ import sys
 import numpy as np
 import pandas as pd
 import time
+import os
 import requests
-from PyQt5.QtGui import QBrush, QPen, QPainter
+from PyQt5.QtGui import QBrush, QPen, QPainter, QImage
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QRadioButton,
                              QVBoxLayout, QHBoxLayout, QSlider, QLineEdit,
-                             QScrollBar, QGridLayout, QComboBox, QFileDialog, QColorDialog)
+                             QScrollBar, QGridLayout, QComboBox, QFileDialog, QColorDialog, QMessageBox)
 from PyQt5.QtCore import Qt, QTimer
 import pyqtgraph as pg
+from pyqtgraph import exporters
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
+from datetime import datetime
 
 
 class CircleGraph(QWidget):
@@ -254,8 +257,9 @@ class MainWindow(QWidget):
         # Connect buttons
         openBtn.clicked.connect(self.openFile)
         connectBtn.clicked.connect(self.connect_to_signal)  # Connect the connect button to the method
-        exportReportBtn.clicked.connect(self.exportReport)
         colorBtn.clicked.connect(self.openColorDialog)
+        snapshotBtn.clicked.connect(self.take_snapshot)
+        exportReportBtn.clicked.connect(self.export_report)
 
         # Set main layout
         self.setLayout(mainLayout)
@@ -411,46 +415,61 @@ class MainWindow(QWidget):
         self.graphWidget.update()
 
 
-    def exportReport(self):
-        pdf_file_name, _ = QFileDialog.getSaveFileName(self, "Save PDF", "", "PDF Files (*.pdf)")
-        if pdf_file_name:
-            pdf = canvas.Canvas(pdf_file_name, pagesize=letter)
-            width, height = letter
+    def take_snapshot(self):
+        # Specify the directory where the snapshots will be saved
+        snapshot_dir = "snapshots"
+        os.makedirs(snapshot_dir, exist_ok=True)  # Create the directory if it doesn't exist
 
-            images = []  # Add image paths if needed
-            page_count = len(images)
+        # Define the filename with date and time
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        snapshot_filename = os.path.join(snapshot_dir, f"snapshot_{timestamp}.png")
 
-            for i in range(page_count):
-                img_path = images[i]
-                pdf.drawImage(img_path, 50, height - 200, width=5 * inch, height=4 * inch)
+        # Access the "Glued Signals" graph
+        glued_signals_plot = self.gluedGraph.plotItem  # Adjust this if necessary to get the correct graph
 
-                # Draw a table next to the image
-                table_x = 50 + 5 * inch + 20
-                table_y = height - 200
+        # Take the snapshot
+        exporter = pg.exporters.ImageExporter(glued_signals_plot)
+        exporter.export(snapshot_filename)
 
-                # Draw table header
-                pdf.setFillColor(colors.black)
-                pdf.drawString(table_x, table_y + 20, "Min")
-                pdf.drawString(table_x + 100, table_y + 20, "Max")
-                pdf.drawString(table_x + 200, table_y + 20, "Mean")
-                pdf.drawString(table_x + 300, table_y + 20, "Std. Dev.")
-                pdf.drawString(table_x + 400, table_y + 20, "Duration")
-                pdf.drawString(table_x + 500, table_y + 20, "Sampling Rate")
+        # Show success message
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setText("Snapshot saved successfully!")
+        msg.setInformativeText(f"Saved to: {snapshot_filename}")
+        msg.setWindowTitle("Snapshot Success")
+        msg.exec_()
 
-                # Draw empty cells for data entry
-                for j in range(1, 6):
-                    pdf.drawString(table_x, table_y - j * 20, "")
-                    pdf.drawString(table_x + 100, table_y - j * 20, "")
-                    pdf.drawString(table_x + 200, table_y - j * 20, "")
-                    pdf.drawString(table_x + 300, table_y - j * 20, "")
-                    pdf.drawString(table_x + 400, table_y - j * 20, "")
-                    pdf.drawString(table_x + 500, table_y - j * 20, "")
+    def export_report(self):
+        # Create the PDF file name based on the current date and time
+        now = datetime.now()
+        report_filename = f"reports/report_{now.strftime('%Y%m%d_%H%M%S')}.pdf"
 
-                if i < page_count - 1:
-                    pdf.showPage()
+        # Create a canvas object
+        c = canvas.Canvas(report_filename, pagesize=letter)
+        width, height = letter
 
-            pdf.save()
-            print(f"Report saved as: {pdf_file_name}")
+        # Add images and text
+        c.drawImage("images/uni-logo.png", width - 150, height - 50, width=100, height=50)
+        c.drawImage("images/sbme-logo.jpg", 50, height - 50, width=100, height=50)
+        
+        # Title in the middle
+        c.setFont("Helvetica-Bold", 20)
+        c.drawCentredString(width / 2, height - 70, "Signal Report")
+
+        # Take snapshot of "Glued Signals" graph
+        snapshot_path = f"snapshots/snapshot_{now.strftime('%Y%m%d_%H%M%S')}.png"
+        exporter = pg.exporters.ImageExporter(self.gluedGraph.plotItem)  # Adjust this to your actual reference
+        exporter.export(snapshot_path)
+
+        # Add the snapshot to the PDF
+        c.drawImage(snapshot_path, 50, height - 200, width=500, height=200)  # Adjust positioning and size
+
+        # Finalize the PDF
+        c.showPage()
+        c.save()
+
+        # Show success message
+        QMessageBox.information(self, "Export Report", f"Report saved as {report_filename}.")
 
 
 if __name__ == '__main__':
