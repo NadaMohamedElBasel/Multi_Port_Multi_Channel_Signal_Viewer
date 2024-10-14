@@ -3,8 +3,9 @@ import numpy as np
 import pandas as pd
 import time
 import requests
-from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QRadioButton, 
-                             QVBoxLayout, QHBoxLayout, QSlider, QLineEdit, 
+from PyQt5.QtGui import QBrush, QPen, QPainter
+from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QRadioButton,
+                             QVBoxLayout, QHBoxLayout, QSlider, QLineEdit,
                              QScrollBar, QGridLayout, QComboBox, QFileDialog, QColorDialog)
 from PyQt5.QtCore import Qt, QTimer
 import pyqtgraph as pg
@@ -13,19 +14,88 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
 
+
+class CircleGraph(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setMinimumSize(400, 400)
+        self.data = None  # Placeholder for signal data
+        self.angle = 0  # Angle that represents time
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+
+        # Define the center and radius for the circle
+        center_x, center_y = self.width() // 2, self.height() // 2
+        radius = min(self.width(), self.height()) // 2 - 20
+
+        # Draw the outer circle
+        painter.setBrush(QBrush(Qt.black, Qt.SolidPattern))
+        painter.drawEllipse(center_x - radius, center_y - radius, 2 * radius, 2 * radius)
+
+        # Draw a circle border
+        pen = QPen(Qt.black, 4, Qt.SolidLine)
+        painter.setPen(pen)
+        painter.drawEllipse(center_x - radius, center_y - radius, 2 * radius, 2 * radius)
+
+        # Draw concentric circles and radial lines
+        painter.setPen(QPen(Qt.gray, 1, Qt.DotLine))  # Set pen for concentric circles
+        decrementRadius = radius // 7
+        for circularGrids in range(7):
+            gridRadius = radius - decrementRadius * circularGrids
+            painter.drawEllipse(center_x - gridRadius, center_y - gridRadius, 2 * gridRadius, 2 * gridRadius)
+
+        # Draw radial lines
+        num_radial_lines = 12  # Number of radial lines
+        for angle in np.linspace(0, 360, num_radial_lines, endpoint=False):
+            x = center_x + radius * np.cos(np.radians(angle))
+            y = center_y + radius * np.sin(np.radians(angle))
+            painter.drawLine(center_x, center_y, int(x), int(y))  # Line from center to edge
+
+        # Plot points with respect to time
+        if self.data is not None:
+            angles = np.linspace(0, 2 * np.pi, len(self.data))  # Spread points around the circle
+            previous_point = None  # To connect lines between points
+
+            # Find the index of the current point based on the angle
+            current_index = np.argmax(angles >= self.angle) - 1
+            if current_index < 0:
+                current_index = 0
+
+            for idx, value in enumerate(self.data):
+                if angles[idx] <= self.angle:  # Plot with time
+                    point_radius = value  # Scale for plotting
+                    x = point_radius * np.cos(angles[idx])
+                    y = point_radius * np.sin(angles[idx])
+
+                    # Draw red points
+                    painter.setBrush(QBrush(Qt.red))
+                    painter.drawEllipse(int(center_x + x) - 2, int(center_y + y) - 2, 4, 4)
+
+                    # Draw lines connecting points
+                    if previous_point is not None:
+                        painter.setPen(QPen(Qt.red, 0.9))  # Set line color and width
+                        painter.drawLine(previous_point[0], previous_point[1], int(center_x + x), int(center_y + y))
+
+                    previous_point = (int(center_x + x), int(center_y + y))  # Update the previous point
+
+                    # Draw amplitude label only for the current detected point
+                    if idx == current_index:  # Check if this is the current detected index
+                        painter.setPen(QPen(Qt.white, 0.9))
+                        painter.drawText(int(center_x + x) + 5, int(center_y + y) - 5, f"{value:.1f}")
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.initUI()
-         
-        # Define sampling rate 
+
+        # Define sampling rate
         self.sampling_rate = 50
         self.timer_interval = int(1000 / self.sampling_rate)  # Convert to integer
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.connect_to_signal)
         self.timer.start(self.timer_interval)  # Start timer with calculated interval
-        #self.timer.start(1000)  # Set interval to 1000 ms (1 second), adjust as needed
+        # self.timer.start(1000)  # Set interval to 1000 ms (1 second), adjust as needed
 
         self.signal_data = {
             'Graph 1': None,
@@ -39,7 +109,7 @@ class MainWindow(QWidget):
             'Glued Signals': 0,
             'Graph 3': 0
         }
-        
+
         # Store the full plotted data for each graph
         self.plotted_data = {
             'Graph 1': ([], []),
@@ -47,7 +117,7 @@ class MainWindow(QWidget):
             'Glued Signals': ([], []),
             'Graph 3': ([], [])
         }
-        
+
         self.plotComboBox.setCurrentIndex(1)  # Set default to first item
 
     def initUI(self):
@@ -71,13 +141,13 @@ class MainWindow(QWidget):
         plotComboBox.addItem("Graph 1")
         plotComboBox.addItem("Graph 2")
         plotComboBox.addItem("Glued Signals")
-        plotComboBox.addItem("Graph 3") 
+        plotComboBox.addItem("Graph 3")
 
         topLayout.addWidget(openBtn)
         topLayout.addWidget(connectBtn)
         topLayout.addWidget(self.signalInput)
-        topLayout.addWidget(plotComboBox)  
-       
+        topLayout.addWidget(plotComboBox)
+
         mainLayout.addLayout(topLayout)
         self.plotComboBox = plotComboBox
         self.plotComboBox.setCurrentIndex(1)  # Set default to "Graph 1"
@@ -103,9 +173,7 @@ class MainWindow(QWidget):
         self.gluedGraph.showGrid(x=True, y=True)
         self.gluedGraph.setLimits(xMin=0)
 
-        self.graph3 = pg.PlotWidget()
-        self.graph3.showGrid(x=True, y=True)
-        self.graph3.setLimits(xMin=0)
+        self.graph3 = CircleGraph()
 
         # Set sizes for the graphs
         self.graph1.setFixedSize(400, 300)
@@ -150,7 +218,7 @@ class MainWindow(QWidget):
         zoomOutBtn = QPushButton('Zoom Out')
         linkBtn = QPushButton('Link')
         showHideBtn = QPushButton('Show / Hide')
-        playPauseBtn = QPushButton('Play / Pause')  
+        playPauseBtn = QPushButton('Play / Pause')
         rewindBtn = QPushButton('Rewind')
         zoomInBtn = QPushButton('Zoom In')
 
@@ -200,12 +268,12 @@ class MainWindow(QWidget):
                     # Append new data to existing data
                     existing_time, existing_signal = self.signal_data[selected_graph]
                     self.signal_data[selected_graph] = (np.concatenate((existing_time, time)),
-                                                         np.concatenate((existing_signal, selected_signal)))
+                                                        np.concatenate((existing_signal, selected_signal)))
 
             # Clear previously plotted data for the selected graph
             self.plotted_data[selected_graph] = ([], [])
             # Update the graph with the newly loaded signal
-            self.update_graphs()  
+            self.update_graphs()
 
     def load_signal_data(self, file_name):
         """Load ECG data from a CSV file."""
@@ -213,7 +281,6 @@ class MainWindow(QWidget):
         time = data[0].to_numpy()
         amplitude = data[1].to_numpy()
         return time, amplitude
-    
 
     def connect_to_signal(self):
         url = self.signalInput.text().strip()  # Get URL from input field and trim whitespace
@@ -225,87 +292,90 @@ class MainWindow(QWidget):
             response = requests.get(url)  # Send a request to the API
             response.raise_for_status()  # Raise an error for bad responses
             data = response.json()  # Parse JSON response
-            
+
             # Check for 'price' in the response
             if 'price' in data:
                 price = float(data['price'])  # Extract price as a float
-                
+
                 current_time = time.time()  # Get the current time for plotting
                 selected_graph = self.plotComboBox.currentText()  # Get the selected graph from the combo box
                 if self.signal_data[selected_graph] is None:
                     self.signal_data[selected_graph] = ([], [])  # Initialize if None
-                
+
                 # Append the new data to your signal data
                 self.signal_data[selected_graph][0].append(current_time)  # Time data
                 self.signal_data[selected_graph][1].append(price)  # Price data
-                
+
                 print(f"Current Price: {price}")  # For debugging
-                
+
                 # Update the graphs after adding new data
                 self.update_graphs()  # Update graphs with new data
-                
+
             else:
                 print("Error: 'price' key not found in the response.")
-                
+
         except requests.exceptions.RequestException as e:
             print(f"Error connecting to signal: {e}")
         except ValueError as e:
             print(f"Error parsing JSON: {e}")
-
 
     def update_graphs(self):
         """Update all graphs with their respective ECG data."""
         for graph_name in self.signal_data.keys():
             if self.signal_data[graph_name] is not None:
                 time, signal = self.signal_data[graph_name]  # Unpack the tuple
-                
+
                 # Clear the existing plot and plot new data
                 if graph_name == 'Graph 1':
                     self.graph1.clear()
-                    
+
                     # Set y-axis limits based on signal range
                     min_signal = min(signal)  # Find the minimum value in the signal
                     max_signal = max(signal)  # Find the maximum value in the signal
-                    
+
                     padding = 0.1  # Adjust this value as needed for better visibility
                     self.graph1.setYRange(min_signal - padding, max_signal + padding)  # Set y-axis limits
-                    
+
                     self.graph1.plot(time, signal, pen='r')  # Use a white pen for better visibility
 
                 elif graph_name == 'Graph 2':
                     self.graph2.clear()
-                    
+
                     min_signal = min(signal)
                     max_signal = max(signal)
-                    
+
                     padding = 0.1
                     self.graph2.setYRange(min_signal - padding, max_signal + padding)
-                    
+
                     self.graph2.plot(time, signal, pen='r')
 
                 elif graph_name == 'Glued Signals':
                     self.gluedGraph.clear()
-                    
+
                     min_signal = min(signal)
                     max_signal = max(signal)
-                    
+
                     padding = 0.1
                     self.gluedGraph.setYRange(min_signal - padding, max_signal + padding)
-                    
+
                     self.gluedGraph.plot(time, signal, pen='r')
 
                 elif graph_name == 'Graph 3':
                     self.graph3.clear()
-                    
+
                     min_signal = min(signal)
                     max_signal = max(signal)
-                    
+
                     padding = 0.1
                     self.graph3.setYRange(min_signal - padding, max_signal + padding)
-                    
+
                     self.graph3.plot(time, signal, pen='r')
 
-
+    def update_circular_graph(self):
+        self.angle += np.pi / 90  # Update the angle at a fixed rate
+        if self.angle >= 2 * np.pi:
+            self.angle = 0  # Reset the angle after completing the circle
+        self.update()  # Trigger a repaint
     def openColorDialog(self):
         color = QColorDialog.getColor()
 
@@ -320,7 +390,7 @@ class MainWindow(QWidget):
 
             for i in range(page_count):
                 img_path = images[i]
-                pdf.drawImage(img_path, 50, height - 200, width=5*inch, height=4*inch)
+                pdf.drawImage(img_path, 50, height - 200, width=5 * inch, height=4 * inch)
 
                 # Draw a table next to the image
                 table_x = 50 + 5 * inch + 20
@@ -350,7 +420,8 @@ class MainWindow(QWidget):
             pdf.save()
             print(f"Report saved as: {pdf_file_name}")
 
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     window = MainWindow()
-    sys.exit(app.exec_())                
+    sys.exit(app.exec_())
