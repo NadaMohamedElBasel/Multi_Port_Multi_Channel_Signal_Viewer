@@ -227,6 +227,8 @@ class MainWindow(QWidget):
         self.is_playing = False 
         self.linked=False
 
+        self.timer = QTimer(self)
+
         self.sampling_rate = 50
         self.timer_interval = int(1000 / self.sampling_rate)  # Convert to integer
 
