@@ -1131,12 +1131,6 @@ class MainWindow(QWidget):
         QMessageBox.information(self, "Export Report", f"Report saved as {report_filename}.")
 
 
-    
-    
-
-        # Show success message
-        QMessageBox.information(self, "Export Report", f"Report saved as {report_filename}.")
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
