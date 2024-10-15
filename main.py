@@ -111,15 +111,25 @@ class CircleGraph(QWidget):
         self.setMinimumSize(400, 400)
         self.data = None  # Placeholder for signal data
         self.angle = 0  # Angle that represents time
+        self.circular_zoom_level = 1.0  # Zoom level
+        self.circular_is_playing = True  # Play/Pause state
+        self.show_points = True  # Track visibility of points and lines
+        self.button = QPushButton("Pause")  # Start with "Pause" since it auto-plays
+        self.button.clicked.connect(self.toggle_play_pause)
+        # Initialize color
+        self.color = Qt.red
+
+    # Initialize QTimer for animation
+        self.circular_timer = QTimer()
+        self.circular_timer.timeout.connect(self.update_circular_graph)
+        self.start_animation()  # Start the animation automatically
 
     def paintEvent(self, event):
         painter = QPainter(self)
 
         # Define the center and radius for the circle
         center_x, center_y = self.width() // 2, self.height() // 2
-        radius = min(self.width(), self.height()) // 2 - 20
-
-        # Draw the outer circle
+        radius = int(min(self.width(), self.height()) // 2 - 20 )
         painter.setBrush(QBrush(Qt.black, Qt.SolidPattern))
         painter.drawEllipse(center_x - radius, center_y - radius, 2 * radius, 2 * radius)
 
@@ -143,7 +153,7 @@ class CircleGraph(QWidget):
             painter.drawLine(center_x, center_y, int(x), int(y))  # Line from center to edge
 
         # Plot points with respect to time
-        if self.data is not None:
+        if self.show_points and self.data is not None:
             angles = np.linspace(0, 2 * np.pi, len(self.data))  # Spread points around the circle
             previous_point = None  # To connect lines between points
 
@@ -154,17 +164,17 @@ class CircleGraph(QWidget):
 
             for idx, value in enumerate(self.data):
                 if angles[idx] <= self.angle:  # Plot with time
-                    point_radius = value  # Scale for plotting
-                    x = point_radius * np.cos(angles[idx])
-                    y = point_radius * np.sin(angles[idx])
+                    point_radius = value  # Scale for plotting     
+                    x = (point_radius * self.circular_zoom_level) * np.cos(angles[idx])  # Adjusted position calculation
+                    y = (point_radius * self.circular_zoom_level) * np.sin(angles[idx])  # Adjusted position calculation
 
                     # Draw red points
-                    painter.setBrush(QBrush(Qt.red))
+                    painter.setBrush(QBrush(self.color))
                     painter.drawEllipse(int(center_x + x) - 2, int(center_y + y) - 2, 4, 4)
 
                     # Draw lines connecting points
                     if previous_point is not None:
-                        painter.setPen(QPen(Qt.red, 0.9))  # Set line color and width
+                        painter.setPen(QPen(self.color, 0.9))  # Set line color and width
                         painter.drawLine(previous_point[0], previous_point[1], int(center_x + x), int(center_y + y))
 
                     previous_point = (int(center_x + x), int(center_y + y))  # Update the previous point
@@ -174,11 +184,54 @@ class CircleGraph(QWidget):
                         painter.setPen(QPen(Qt.white, 0.9))
                         painter.drawText(int(center_x + x) + 5, int(center_y + y) - 5, f"{value:.1f}")
     def update_circular_graph(self):
+      if self.circular_is_playing:  # Only update angle if playing
         self.angle += np.pi / 90  # Update the angle at a fixed rate
         if self.angle >= 2 * np.pi:
             self.angle = 0  # Reset the angle after completing the circle
         self.update()  # Trigger a repaint
-    
+    def zoom_in(self):
+        self.circular_zoom_level *= 1.1  # Increase zoom level
+        self.update()  # Redraw
+
+    def zoom_out(self):
+        self.circular_zoom_level= max(1.0, self.circular_zoom_level / 1.1)  # Decrease zoom level, minimum 1.0  
+        self.update()  # Redraw
+
+    def toggle_play_pause(self):
+        self.circular_is_playing = not self.circular_is_playing
+        if self.circular_is_playing:
+            self.start_animation()  # Start animation loop
+        else:
+            self.stop_animation()  # Stop animation
+            self.update_button_text()  # Update button text
+
+    def start_animation(self):
+        self.circular_timer.start(100)  # Start timer with a 100 ms interval
+
+    def stop_animation(self):
+        self.circular_timer.stop()  # Stop the time
+
+    def update_button_text(self):
+      # This method should be called after toggling play/pause
+     if self.circular_is_playing:
+        self.button.setText("Pause")  # Set button text to "Pause"
+     else:
+        self.button.setText("Play")  # Set button text to "Play"   
+
+    def rewind(self):
+        self.angle = 0  # Reset angle
+        self.update()  # Redraw
+    def change_color(self):
+        # Logic to open a color dialog and set self.color
+        circular_color = QColorDialog.getColor(self.color, self)
+        if circular_color.isValid():
+            self.color = circular_color
+
+    def toggle_visibility(self):
+        # Toggle the visibility of the drawn points and lines
+        self.show_points = not self.show_points
+        self.update()
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -383,6 +436,35 @@ class MainWindow(QWidget):
         graphLayout.addWidget(self.graph3_vertical_scroll, 4, 2)
         graphLayout.addWidget(self.graph3_horizontal_scroll, 5, 3)
 
+     # Create a new layout for Graph 3 Controls
+        graph3ControlsLayout = QVBoxLayout()
+
+    # Create buttons for controlling Graph 3
+        circular_zoomInBtn = QPushButton('Zoom In')
+        circular_zoomOutBtn = QPushButton('Zoom Out')
+        circular_playPauseBtn = QPushButton('Play/Pause')
+        circular_rewindBtn = QPushButton('Rewind')
+        circular_colorBtn = QPushButton('Change Color')
+        circular_showHideBtn = QPushButton('Show/Hide')
+
+  # Connect buttons to their respective functions in CircleGraph
+        circular_zoomInBtn.clicked.connect(self.graph3.zoom_in)
+        circular_zoomOutBtn.clicked.connect(self.graph3.zoom_out)
+        circular_playPauseBtn.clicked.connect(self.graph3.toggle_play_pause)
+        circular_rewindBtn.clicked.connect(self.graph3.rewind)
+        circular_colorBtn.clicked.connect(self.graph3.change_color)
+        circular_showHideBtn.clicked.connect(self.graph3.toggle_visibility)
+
+    # Add buttons to the controls layout
+        graph3ControlsLayout.addWidget(circular_zoomInBtn)
+        graph3ControlsLayout.addWidget(circular_zoomOutBtn)
+        graph3ControlsLayout.addWidget(circular_playPauseBtn)
+        graph3ControlsLayout.addWidget(circular_rewindBtn)
+        graph3ControlsLayout.addWidget(circular_colorBtn)
+        graph3ControlsLayout.addWidget(circular_showHideBtn)
+
+      # Add the controls layout next to Graph 3 in the graphLayout
+        graphLayout.addLayout(graph3ControlsLayout, 4, 4)  
 
         mainLayout.addLayout(graphLayout)
 
@@ -532,7 +614,7 @@ class MainWindow(QWidget):
         scaling_factor = 0.1
 
         if axis == 'x':
-            # Adjust X-axis range based on scroll difference (scaled down)
+            # Adjust X-axis range based on scroll difference (scaled down) 
             new_x_min = current_range[0][0] + difference * scaling_factor
             new_x_max = current_range[0][1] + difference * scaling_factor
             graph.setXRange(new_x_min, new_x_max, padding=0)
