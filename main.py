@@ -11,7 +11,7 @@ from PyQt5.QtGui import QBrush, QPen, QPainter, QImage
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QRadioButton, QDialog,QDialogButtonBox,QGroupBox,QButtonGroup,
                              QVBoxLayout, QHBoxLayout, QSlider, QLineEdit,
                              QScrollBar, QGridLayout, QComboBox, QFileDialog, QColorDialog, QMessageBox)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QRect
 import pyqtgraph as pg
 from pyqtgraph import exporters
 from reportlab.lib import colors
@@ -279,16 +279,33 @@ class MainWindow(QWidget):
         self.graph3_vertical_scroll.valueChanged.connect(self.graph3_y_scroll_moved)
         self.is_playing = False 
         self.linked=False
-        # Define sampling rate
+
+        self.timer = QTimer(self)
+
         self.sampling_rate = 50
         self.timer_interval = int(1000 / self.sampling_rate)  # Convert to integer
 
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_graphs)
-        self.timer.timeout.connect(self.connect_to_signal)
-        self.timer.timeout.connect(self.update_circular_graph)                      #-------------------------------------------
-        self.timer.start(self.timer_interval)  # Start timer with calculated interval
-        # self.timer.start(1000)  # Set interval to 1000 ms (1 second), adjust as needed
+        # Define sampling rates
+        self.update_graphs_sampling_rate = self.timer_interval  # 900 ms for graph updates
+        self.real_time_sampling_rate = 500      # 1000 ms for real-time updates
+        self.circular_graph_sampling_rate = 700  # 1300 ms for circular graph updates
+
+        # Create a timer for updating graphs
+        self.update_graphs_timer = QTimer(self)
+        self.update_graphs_timer.timeout.connect(self.update_graphs)  # Connect update_graphs to this timer
+        self.update_graphs_timer.start(self.update_graphs_sampling_rate)  # Start with 900 ms interval
+
+        # Create a timer for real-time updates
+        self.real_time_timer = QTimer(self)
+        self.real_time_timer.timeout.connect(self.update_real_time_graphs)
+        self.real_time_timer.timeout.connect(self.connect_to_signal)
+        self.real_time_timer.start(self.real_time_sampling_rate)  # Start with 1000 ms interval
+
+        # Create a timer for circular graph updates
+        self.circular_graph_timer = QTimer(self)
+        self.circular_graph_timer.timeout.connect(self.update_circular_graph)
+        self.circular_graph_timer.start(self.circular_graph_sampling_rate)  # Start with 1300 ms interval
+
 
         self.signal_data = {
             'Graph 1': None,
@@ -468,6 +485,27 @@ class MainWindow(QWidget):
 
         mainLayout.addLayout(graphLayout)
 
+                # Create the new vertical layout for the 4 objects next to gluedGraph
+        gluedOptionsLayout = QVBoxLayout()
+
+        # Add the buttons and input boxes
+        disableSelectedBtn = QPushButton('Disable Selected Mode')
+        disableSelectedBtn.setFixedWidth(160)  # Set a custom width
+
+        plotConcatenatedBtn = QPushButton('Plot Concatenated Signals')
+        plotConcatenatedBtn.setFixedWidth(160)  # Set a custom width
+
+        gapInput = QLineEdit()
+        gapInput.setPlaceholderText('gap')
+        gapInput.setFixedWidth(90)  # Set a custom width for the input box
+
+        interpolationInput = QLineEdit()
+        interpolationInput.setPlaceholderText('interpolation')
+        interpolationInput.setFixedWidth(90)  # Set a custom width for the input box
+
+        # Add the new layout next to gluedGraph in the grid
+        graphLayout.addLayout(gluedOptionsLayout, 4, 2)
+
         # Cine Speed Slider
         cineSpeedLayout = QHBoxLayout()
         cineSpeedLabel = QLabel('Cine Speed:')
@@ -503,6 +541,7 @@ class MainWindow(QWidget):
 
         bottomLayout.addWidget(moveBtn)
         bottomLayout.addWidget(colorBtn)
+        bottomLayout.addWidget(self.signalInput)
         bottomLayout.addWidget(snapshotBtn)
         bottomLayout.addWidget(exportReportBtn)
         bottomLayout.addWidget(showHideBtn)
@@ -784,7 +823,7 @@ class MainWindow(QWidget):
                 print(f"Current Price: {price}")  # For debugging
 
                 # Update the graphs after adding new data
-                self.update_graphs()  # Update graphs with new data
+                self.update_real_time_graphs()  # Update graphs with new data
 
             else:
                 print("Error: 'price' key not found in the response.")
@@ -809,6 +848,59 @@ class MainWindow(QWidget):
                 # Plot the full line so far
                 self.plot_signal(graph_name)
                 self.time_index[graph_name] += 1  # Increment time index for this graph
+
+    def update_real_time_graphs(self):
+        """Update all graphs with their respective ECG data."""
+        for graph_name in self.signal_data.keys():
+            if self.signal_data[graph_name] is not None:
+                time, signal = self.signal_data[graph_name]  # Unpack the tuple
+                
+                # Clear the existing plot and plot new data
+                if graph_name == 'Graph 1':
+                    self.graph1.clear()
+                    
+                    # Set y-axis limits based on signal range
+                    min_signal = min(signal)  # Find the minimum value in the signal
+                    max_signal = max(signal)  # Find the maximum value in the signal
+                    
+                    padding = 0.1  # Adjust this value as needed for better visibility
+                    self.graph1.setYRange(min_signal - padding, max_signal + padding)  # Set y-axis limits
+                    
+                    self.graph1.plot(time, signal, pen='r')  # Use a white pen for better visibility
+
+                elif graph_name == 'Graph 2':
+                    self.graph2.clear()
+                    
+                    min_signal = min(signal)
+                    max_signal = max(signal)
+                    
+                    padding = 0.1
+                    self.graph2.setYRange(min_signal - padding, max_signal + padding)
+                    
+                    self.graph2.plot(time, signal, pen='r')
+
+                elif graph_name == 'Glued Signals':
+                    self.gluedGraph.clear()
+                    
+                    min_signal = min(signal)
+                    max_signal = max(signal)
+                    
+                    padding = 0.1
+                    self.gluedGraph.setYRange(min_signal - padding, max_signal + padding)
+                    
+                    self.gluedGraph.plot(time, signal, pen='r')
+
+                elif graph_name == 'Graph 3':
+                    self.graph3.clear()
+                    
+                    min_signal = min(signal)
+                    max_signal = max(signal)
+                    
+                    padding = 0.1
+                    self.graph3.setYRange(min_signal - padding, max_signal + padding)
+                    
+                    self.graph3.plot(time, signal, pen='r')
+
                 
     def plot_signal(self, graph_name):
         """Plot the signal on the appropriate graph."""
@@ -1141,12 +1233,6 @@ class MainWindow(QWidget):
         # Show success message
         QMessageBox.information(self, "Export Report", f"Report saved as {report_filename}.")
 
-
-    
-    
-
-        # Show success message
-        QMessageBox.information(self, "Export Report", f"Report saved as {report_filename}.")
 
 
 if __name__ == '__main__':
