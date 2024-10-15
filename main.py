@@ -403,6 +403,27 @@ class MainWindow(QWidget):
 
         mainLayout.addLayout(graphLayout)
 
+                # Create the new vertical layout for the 4 objects next to gluedGraph
+        gluedOptionsLayout = QVBoxLayout()
+
+        # Add the buttons and input boxes
+        disableSelectedBtn = QPushButton('Disable Selected Mode')
+        disableSelectedBtn.setFixedWidth(160)  # Set a custom width
+
+        plotConcatenatedBtn = QPushButton('Plot Concatenated Signals')
+        plotConcatenatedBtn.setFixedWidth(160)  # Set a custom width
+
+        gapInput = QLineEdit()
+        gapInput.setPlaceholderText('gap')
+        gapInput.setFixedWidth(90)  # Set a custom width for the input box
+
+        interpolationInput = QLineEdit()
+        interpolationInput.setPlaceholderText('interpolation')
+        interpolationInput.setFixedWidth(90)  # Set a custom width for the input box
+
+        # Add the new layout next to gluedGraph in the grid
+        graphLayout.addLayout(gluedOptionsLayout, 4, 2)
+
         # Cine Speed Slider
         cineSpeedLayout = QHBoxLayout()
         cineSpeedLabel = QLabel('Cine Speed:')
