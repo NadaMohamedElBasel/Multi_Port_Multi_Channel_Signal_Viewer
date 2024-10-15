@@ -11,7 +11,7 @@ from PyQt5.QtGui import QBrush, QPen, QPainter, QImage
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QRadioButton, QDialog,QDialogButtonBox,QGroupBox,QButtonGroup,
                              QVBoxLayout, QHBoxLayout, QSlider, QLineEdit,
                              QScrollBar, QGridLayout, QComboBox, QFileDialog, QColorDialog, QMessageBox)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QRect
 import pyqtgraph as pg
 from pyqtgraph import exporters
 from reportlab.lib import colors
