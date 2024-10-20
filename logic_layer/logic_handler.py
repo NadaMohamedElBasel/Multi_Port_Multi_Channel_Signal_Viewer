@@ -51,7 +51,7 @@ class LogicHandler:
     def toggle_selection_mode(self):
         """Toggle the selection mode for rectangles."""
         self.current_rectangle_index = 0
-        self.selected_rectangles = [QRect() for _ in range(2)]
+        self.selected_rectangles = [QRect() for _ in range(2)]  
 
     def is_plot_concatenation_enabled(self):
         """Check if selection mode is enabled."""

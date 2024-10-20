@@ -115,6 +115,7 @@ class MainWindow(QWidget):
         self.current_rectangle_index = 0  # Track which rectangle is currently being drawn
         self.connected_signal = False
         self.initUI()
+        self.linked=False
 
         # Connect existing scrollbars to their respective methods
 
@@ -378,7 +379,7 @@ class MainWindow(QWidget):
             destination_graph = graph_names.get(destination_graph, None)
             
             if source_graph and destination_graph:
-                self.move_signal(source_graph, destination_graph)  
+                self.mediator.move_signal(source_graph, destination_graph)  
 
     def update_timer_interval(self):
         speed = self.cineSpeedSlider.value()  # Get the current value of the slider

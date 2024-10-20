@@ -141,33 +141,59 @@ class Mediator:
         color = self.logic.graph_colors[graph_name]  # Get the current color for the graph
         graph.plot_widget.plot(plotted_data[graph_name][0], plotted_data[graph_name][1], pen=color)
 
-    def move_signal(self, source, destination): 
-        if source != destination and self.logic.is_playing_graph[source.name]: 
-            signal_data = self.logic.signal_data[source.name]  # Get the current signal data for the source
-            if signal_data is not None:
-                signal_data[destination.name] = signal_data
-                signal_data[source.name] = None  # Clear source graph data
-                self.clear_plot(source)
-                self.refresh_plot(destination)
-                self.logic.is_playing_graph[destination.name] = True  # Start playing on the destination graph
-                self.logic.is_playing_graph[source.name] = False  # Stop playing on the source graph
-                self.plot_signal(destination)
-
-    def refresh_plot(self, graph):
-        """Refresh the plot by replotting data for the given graph."""
+    def plot_signal_with_name(self, graph_name):
+        """Plot the signal on the appropriate graph."""
+        self.logic.time_index[graph_name] += 1
         plotted_data = self.logic.plotted_data
-        graph.plot_widget.plot(plotted_data[graph.name][0], plotted_data[graph.name][1], clear=True)
+        #graph.plot_widget.clear()
+        if self.logic.hidden_signals[graph_name]:
+            return
+
+        color = self.logic.graph_colors[graph_name]  # Get the current color for the graph
+      #  graph.plot_widget.plot(plotted_data[graph_name][0], plotted_data[graph_name][1], pen=color)
+
+    def move_signal(self, source, destination): 
+
+        source_name=source
+        destination_name=destination
+        print("3adena 7warat el name")
+        print(source)
+        print(destination)
+
+        if source_name != destination_name: 
+            signal_data = self.logic.signal_data.get(source_name)  # Get the current signal data for the source
+            if signal_data is not None:
+                signal_values, metadata = signal_data
+               # self.logic.signal_data[destination_name] = signal_data
+                self.logic.signal_data[destination_name] = (signal_values, metadata)
+                self.logic.signal_data[source_name] = None  # Clear source graph data
+
+                print("wselna abl el clear wel refresh")
+                self.logic.is_playing_graph[destination_name] = True  # Start playing on the destination graph
+                self.logic.is_playing_graph[source_name] = False  # Stop playing on the source graph
+                self.plot_signal_with_name(destination_name)
+                print("elmafrood 7asal plotting")
+                #self.clear_plot(source_name)
+                #self.refresh_plot(destination_name)
+                print("weselna")
+
 
     def clear_plot(self, graph):
         """Clear the selected graph."""
         graph.plot_widget.plot([], [], clear=True)
+            
+    def refresh_plot(self, graph):
+        #"""Refresh the plot by replotting data for the given graph."""
+        plotted_data = self.logic.plotted_data
+        graph.plot_widget.plot(plotted_data[graph.name][0], plotted_data[graph.name][1], clear=True)
+
 
     def take_snapshot(self, plot_item):
         # Specify the directory where the snapshots will be saved
         snapshot_dir = "snapshots"
         os.makedirs(snapshot_dir, exist_ok=True)  # Create the directory if it doesn't exist
         # Define the filename with date and time
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         snapshot_filename = os.path.join(snapshot_dir, f"snapshot_{timestamp}.png")
         # Access the "Glued Signals" graph
         glued_signals_plot = plot_item  # Adjust this if necessary to get the correct graph
